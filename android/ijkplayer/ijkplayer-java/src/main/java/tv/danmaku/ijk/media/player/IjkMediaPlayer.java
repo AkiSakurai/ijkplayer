@@ -1033,6 +1033,7 @@ public final class IjkMediaPlayer extends AbstractMediaPlayer {
                 // No real default action so far.
                 return;
             case MEDIA_TIMED_TEXT:
+                Log.i("MEDIA_TIMED_TEXT",  (String)msg.obj);
                 if (msg.obj == null) {
                     player.notifyOnTimedText(null);
                 } else {

@@ -48,7 +48,7 @@ public class FileExplorerActivity extends AppActivity {
         if (!TextUtils.isEmpty(lastDirectory) && new File(lastDirectory).isDirectory())
             doOpenDirectory(lastDirectory, false);
         else
-            doOpenDirectory("/", false);
+            doOpenDirectory("/sdcard" ,false);
     }
 
     @Override

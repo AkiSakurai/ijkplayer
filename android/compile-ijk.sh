@@ -27,6 +27,8 @@ REQUEST_SUB_CMD=$2
 ACT_ABI_32="armv5 armv7a x86"
 ACT_ABI_64="armv5 armv7a arm64 x86 x86_64"
 ACT_ABI_ALL=$ACT_ABI_64
+ACT_ABI_COMMON="x86 x86_64 arm64 armv7a"
+
 UNAME_S=$(uname -s)
 
 FF_MAKEFLAGS=
@@ -94,6 +96,12 @@ case "$REQUEST_TARGET" in
     ;;
     armv5|armv7a|arm64|x86|x86_64)
         do_ndk_build $REQUEST_TARGET $REQUEST_SUB_CMD;
+    ;;
+    common)
+        for ABI in $ACT_ABI_COMMON
+        do
+            do_ndk_build "$ABI" $REQUEST_SUB_CMD;
+        done
     ;;
     all32)
         for ABI in $ACT_ABI_32

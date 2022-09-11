@@ -40,7 +40,7 @@ fi
 
 
 FF_BUILD_ROOT=`pwd`
-FF_ANDROID_PLATFORM=android-9
+FF_ANDROID_PLATFORM=android-16
 
 
 FF_BUILD_NAME=
@@ -54,7 +54,7 @@ FF_DEP_LIBSOXR_LIB=
 
 FF_CFG_FLAGS=
 
-FF_EXTRA_CFLAGS=
+FF_EXTRA_CFLAGS="-DSSL_library_init=OPENSSL_init_ssl"
 FF_EXTRA_LDFLAGS=
 FF_DEP_LIBS=
 
@@ -81,7 +81,7 @@ if [ "$FF_ARCH" = "armv7a" ]; then
     FF_BUILD_NAME_LIBSOXR=libsoxr-armv7a
     FF_SOURCE=$FF_BUILD_ROOT/$FF_BUILD_NAME
 
-    FF_CROSS_PREFIX=arm-linux-androideabi
+    FF_CROSS_PREFIX=armv7a-linux-androideabi16
     FF_TOOLCHAIN_NAME=${FF_CROSS_PREFIX}-${FF_GCC_VER}
 
     FF_CFG_FLAGS="$FF_CFG_FLAGS --arch=arm --cpu=cortex-a8"
@@ -115,7 +115,7 @@ elif [ "$FF_ARCH" = "x86" ]; then
     FF_BUILD_NAME_LIBSOXR=libsoxr-x86
     FF_SOURCE=$FF_BUILD_ROOT/$FF_BUILD_NAME
 
-    FF_CROSS_PREFIX=i686-linux-android
+    FF_CROSS_PREFIX=i686-linux-android16
     FF_TOOLCHAIN_NAME=x86-${FF_GCC_VER}
 
     FF_CFG_FLAGS="$FF_CFG_FLAGS --arch=x86 --cpu=i686 --enable-yasm"
@@ -133,7 +133,7 @@ elif [ "$FF_ARCH" = "x86_64" ]; then
     FF_BUILD_NAME_LIBSOXR=libsoxr-x86_64
     FF_SOURCE=$FF_BUILD_ROOT/$FF_BUILD_NAME
 
-    FF_CROSS_PREFIX=x86_64-linux-android
+    FF_CROSS_PREFIX=x86_64-linux-android21
     FF_TOOLCHAIN_NAME=${FF_CROSS_PREFIX}-${FF_GCC_64_VER}
 
     FF_CFG_FLAGS="$FF_CFG_FLAGS --arch=x86_64 --enable-yasm"
@@ -151,7 +151,7 @@ elif [ "$FF_ARCH" = "arm64" ]; then
     FF_BUILD_NAME_LIBSOXR=libsoxr-arm64
     FF_SOURCE=$FF_BUILD_ROOT/$FF_BUILD_NAME
 
-    FF_CROSS_PREFIX=aarch64-linux-android
+    FF_CROSS_PREFIX=aarch64-linux-android21
     FF_TOOLCHAIN_NAME=${FF_CROSS_PREFIX}-${FF_GCC_64_VER}
 
     FF_CFG_FLAGS="$FF_CFG_FLAGS --arch=aarch64 --enable-yasm"
@@ -197,14 +197,6 @@ mkdir -p $FF_PREFIX
 # mkdir -p $FF_SYSROOT
 
 
-FF_TOOLCHAIN_TOUCH="$FF_TOOLCHAIN_PATH/touch"
-if [ ! -f "$FF_TOOLCHAIN_TOUCH" ]; then
-    $ANDROID_NDK/build/tools/make-standalone-toolchain.sh \
-        $FF_MAKE_TOOLCHAIN_FLAGS \
-        --platform=$FF_ANDROID_PLATFORM \
-        --toolchain=$FF_TOOLCHAIN_NAME
-    touch $FF_TOOLCHAIN_TOUCH;
-fi
 
 
 #--------------------
@@ -212,11 +204,14 @@ echo ""
 echo "--------------------"
 echo "[*] check ffmpeg env"
 echo "--------------------"
-export PATH=$FF_TOOLCHAIN_PATH/bin/:$PATH
+
+LLVM_PATH="$ANDROID_NDK/toolchains/llvm/prebuilt/*/bin"
+export PATH=$(echo $LLVM_PATH):$PATH
+
 #export CC="ccache ${FF_CROSS_PREFIX}-gcc"
-export CC="${FF_CROSS_PREFIX}-gcc"
+export CC="${FF_CROSS_PREFIX}-clang"
 export LD=${FF_CROSS_PREFIX}-ld
-export AR=${FF_CROSS_PREFIX}-ar
+export AR=llvm-ar
 export STRIP=${FF_CROSS_PREFIX}-strip
 
 FF_CFLAGS="-O3 -Wall -pipe \
@@ -240,6 +235,11 @@ export COMMON_FF_CFG_FLAGS=
 
 
 #--------------------
+echo ""
+echo "--------------------"
+echo "[*] checking openssl/libsoxr"
+echo "--------------------"
+
 # with openssl
 if [ -f "${FF_DEP_OPENSSL_LIB}/libssl.a" ]; then
     echo "OpenSSL detected"
@@ -267,8 +267,13 @@ FF_CFG_FLAGS="$FF_CFG_FLAGS --prefix=$FF_PREFIX"
 # Advanced options (experts only):
 FF_CFG_FLAGS="$FF_CFG_FLAGS --cross-prefix=${FF_CROSS_PREFIX}-"
 FF_CFG_FLAGS="$FF_CFG_FLAGS --enable-cross-compile"
-FF_CFG_FLAGS="$FF_CFG_FLAGS --target-os=linux"
+FF_CFG_FLAGS="$FF_CFG_FLAGS --target-os=android"
 FF_CFG_FLAGS="$FF_CFG_FLAGS --enable-pic"
+FF_CFG_FLAGS="$FF_CFG_FLAGS --cc=${FF_CROSS_PREFIX}-clang"
+FF_CFG_FLAGS="$FF_CFG_FLAGS --nm=llvm-nm"
+FF_CFG_FLAGS="$FF_CFG_FLAGS --ar=llvm-ar"
+FF_CFG_FLAGS="$FF_CFG_FLAGS --ranlib=llvm-ranlib"
+
 # FF_CFG_FLAGS="$FF_CFG_FLAGS --disable-symver"
 
 if [ "$FF_ARCH" = "x86" ]; then
@@ -278,6 +283,10 @@ else
     FF_CFG_FLAGS="$FF_CFG_FLAGS --enable-asm"
     FF_CFG_FLAGS="$FF_CFG_FLAGS --enable-inline-asm"
 fi
+
+# https://web.archive.org/web/20210207095218/https://stackoverflow.com/questions/46307266/including-objects-to-a-shared-library-from-a-c-archive-a
+FF_EXTRA_LDFLAGS="$FF_EXTRA_LDFLAGS -Wl,-Bsymbolic"
+
 
 case "$FF_BUILD_OPT" in
     debug)
@@ -301,7 +310,8 @@ cd $FF_SOURCE
 if [ -f "./config.h" ]; then
     echo 'reuse configure'
 else
-    which $CC
+    git checkout ./configure
+    git apply ../openssl.patch
     ./configure $FF_CFG_FLAGS \
         --extra-cflags="$FF_CFLAGS $FF_EXTRA_CFLAGS" \
         --extra-ldflags="$FF_DEP_LIBS $FF_EXTRA_LDFLAGS"
@@ -346,7 +356,8 @@ do
     done
 done
 
-$CC -lm -lz -shared --sysroot=$FF_SYSROOT -Wl,--no-undefined -Wl,-z,noexecstack $FF_EXTRA_LDFLAGS \
+
+$CC -lm -lz -shared -Wl,--no-undefined -Wl,-z,noexecstack $FF_EXTRA_LDFLAGS \
     -Wl,-soname,libijkffmpeg.so \
     $FF_C_OBJ_FILES \
     $FF_ASM_OBJ_FILES \

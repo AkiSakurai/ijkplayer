@@ -23,6 +23,7 @@ import android.text.TextUtils;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
@@ -53,7 +54,10 @@ public class PathCursor extends AbstractCursor {
 
         if (fileList != null) {
             for (File file : fileList) {
-                mFileList.add(new FileItem(file));
+                FileItem item = new FileItem(file);
+                if(item.isDirectory || item.isVideo) {
+                    mFileList.add(item);
+                }
             }
             Collections.sort(this.mFileList, sComparator);
         }
@@ -134,6 +138,8 @@ public class PathCursor extends AbstractCursor {
     static {
         sMediaExtSet.add("flv");
         sMediaExtSet.add("mp4");
+        sMediaExtSet.add("mkv");
+
     }
 
     private class FileItem {

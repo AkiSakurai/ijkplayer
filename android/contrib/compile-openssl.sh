@@ -24,6 +24,7 @@ set +x
 FF_ACT_ARCHS_32="armv5 armv7a x86"
 FF_ACT_ARCHS_64="armv5 armv7a arm64 x86 x86_64"
 FF_ACT_ARCHS_ALL=$FF_ACT_ARCHS_64
+FF_ACT_ARCHS_COMMON="x86_64 x86  armv7a arm64"
 
 echo_archs() {
     echo "===================="
@@ -65,6 +66,14 @@ case "$FF_TARGET" in
     armv5|armv7a|arm64|x86|x86_64)
         echo_archs $FF_TARGET
         sh tools/do-compile-openssl.sh $FF_TARGET
+        echo_nextstep_help
+    ;;
+    common)
+        echo_archs $FF_ACT_ARCHS_COMMON
+        for ARCH in $FF_ACT_ARCHS_COMMON
+        do
+            sh tools/do-compile-openssl.sh $ARCH
+        done
         echo_nextstep_help
     ;;
     all32)

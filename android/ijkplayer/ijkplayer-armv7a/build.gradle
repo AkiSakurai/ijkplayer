@@ -5,11 +5,15 @@ android {
     //noinspection GroovyAssignabilityCheck
     compileSdkVersion rootProject.ext.compileSdkVersion
     //noinspection GroovyAssignabilityCheck
-    buildToolsVersion rootProject.ext.buildToolsVersion
 
     defaultConfig {
         minSdkVersion 9
         targetSdkVersion rootProject.ext.targetSdkVersion
+        externalNativeBuild{
+            ndkBuild {
+                abiFilters  "armeabi-v7a"
+            }
+        }
     }
     buildTypes {
         release {
@@ -17,14 +21,27 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
-    sourceSets.main {
-        jniLibs.srcDirs 'src/main/libs'
-        jni.srcDirs = [] // This prevents the auto generation of Android.mk
+
+    externalNativeBuild {
+        ndkBuild {
+            path 'src/main/jni/Android.mk'
+        }
+    }
+
+    ndkVersion "23.2.8568313"
+}
+
+afterEvaluate{
+    tasks."buildNdkBuildRelease".outputs.files.forEach{
+        print("output:" + it.path)
+    }
+    tasks."buildNdkBuildRelease".inputs.files.forEach{
+        print("input:" + it.path)
     }
 }
 
 dependencies {
-    compile fileTree(dir: 'libs', include: ['*.jar'])
+    implementation fileTree(dir: 'libs', include: ['*.jar'])
 }
 
 apply from: new File(rootProject.projectDir, "tools/gradle-on-demand.gradle");

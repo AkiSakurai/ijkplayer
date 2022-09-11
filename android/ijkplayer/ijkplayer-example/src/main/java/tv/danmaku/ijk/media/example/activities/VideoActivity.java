@@ -137,9 +137,12 @@ public class VideoActivity extends AppCompatActivity implements TracksFragment.I
         IjkMediaPlayer.loadLibrariesOnce(null);
         IjkMediaPlayer.native_profileBegin("libijkplayer.so");
 
+
         mVideoView = (IjkVideoView) findViewById(R.id.video_view);
         mVideoView.setMediaController(mMediaController);
         mVideoView.setHudView(mHudView);
+
+
         // prefer mVideoPath
         if (mVideoPath != null)
             mVideoView.setVideoPath(mVideoPath);
@@ -150,6 +153,7 @@ public class VideoActivity extends AppCompatActivity implements TracksFragment.I
             finish();
             return;
         }
+
         mVideoView.start();
     }
 

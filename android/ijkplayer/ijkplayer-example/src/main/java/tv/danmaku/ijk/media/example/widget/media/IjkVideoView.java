@@ -806,6 +806,7 @@ public class IjkVideoView extends FrameLayout implements MediaController.MediaPl
 
     @Override
     public void start() {
+
         if (isInPlaybackState()) {
             mMediaPlayer.start();
             mCurrentState = STATE_PLAYING;
@@ -1042,6 +1043,8 @@ public class IjkVideoView extends FrameLayout implements MediaController.MediaPl
                 if (mUri != null) {
                     ijkMediaPlayer = new IjkMediaPlayer();
                     ijkMediaPlayer.native_setLogLevel(IjkMediaPlayer.IJK_LOG_DEBUG);
+
+                    ijkMediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "subtitle", 1);
 
                     if (mManifestString != null) {
                         ijkMediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "iformat", "ijklas");

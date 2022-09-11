@@ -1,0 +1,12 @@
+diff --git a/configure b/configure
+index dee507cb6ae..d004da8b2fc 100755
+--- a/configure
++++ b/configure
+@@ -6121,6 +6121,7 @@ enabled omx_rpi           && { check_header OMX_Core.h ||
+                                die "ERROR: OpenMAX IL headers not found"; } && enable omx
+ enabled openssl           && { check_pkg_config openssl openssl openssl/ssl.h OPENSSL_init_ssl ||
+                                check_pkg_config openssl openssl openssl/ssl.h SSL_library_init ||
++                               check_lib openssl openssl/ssl.h OPENSSL_init_ssl -lssl -lcrypto ||
+                                check_lib openssl openssl/ssl.h SSL_library_init -lssl -lcrypto ||
+                                check_lib openssl openssl/ssl.h SSL_library_init -lssl32 -leay32 ||
+                                check_lib openssl openssl/ssl.h SSL_library_init -lssl -lcrypto -lws2_32 -lgdi32 ||
