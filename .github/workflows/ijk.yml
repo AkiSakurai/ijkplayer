@@ -67,4 +67,4 @@ jobs:
           prerelease: true
           title: "Continous Build"
           files: |
-            **
+            android/ijkplayer/ijkplayer-*/build/outputs/aar/ijkplayer-*-release.aar
