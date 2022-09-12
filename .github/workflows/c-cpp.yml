@@ -1,0 +1,70 @@
+name: ijk
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+jobs:
+  # This workflow contains a single job called "build"
+  build:
+    # The type of runner that the job will run on
+    runs-on: ubuntu-latest
+
+    # Steps represent a sequence of tasks that will be executed as part of the job
+    steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          repository: 'AkiSakurai/ijkplayer'
+          
+      - name: Install yasm
+        run: |
+          sudo apt update
+          sudo apt install yasm
+          
+      - name: Build
+        env:
+          ANDROID_NDK: /usr/local/lib/android/sdk/ndk/23.2.8568313
+          ANDROID_NDK_HOME: /usr/local/lib/android/sdk/ndk/23.2.8568313
+        run: |
+          ./init-android.sh
+          ./init-android-openssl.sh
+          cd android/contrib
+          ./compile-openssl.sh common
+          ./compile-ffmpeg.sh common
+          cd ../
+          ./compile-ijk.sh common
+        
+      - name: Set up JDK 11
+        uses: actions/setup-java@v2
+        with:
+          java-version: '11'
+          distribution: 'adopt'
+          
+      - name: Build aar
+        run: |
+           cd android/ijkplayer
+           ./gradlew ijkplayer-arm64:assembleRelease
+           ./gradlew ijkplayer-armv7a:assembleRelease
+           ./gradlew ijkplayer-x86:assembleRelease
+           ./gradlew ijkplayer-x86_64:assembleRelease
+           
+      - uses: actions/upload-artifact@v2
+        with:
+          name: Package
+          path: android/ijkplayer/ijkplayer-*/build/outputs/aar/ijkplayer-*-release.aar
+          
+      - name: Continous Build
+        uses: "marvinpinto/action-automatic-releases@latest"
+        if: startsWith(github.ref, 'refs/heads/')
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          automatic_release_tag: "continous"
+          prerelease: true
+          title: "Continous Build"
+          files: |
+            **
