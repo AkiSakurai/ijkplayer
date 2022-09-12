@@ -12,6 +12,7 @@ elif [ ! -d $LOCAL_WORKSPACE ]; then
     git repack -a
 else
     cd $LOCAL_WORKSPACE
+    git remote set-url origin $REMOTE_REPO
     git fetch --all --tags
     cd -
 fi

@@ -58,7 +58,7 @@ FF_EXTRA_CFLAGS="-DSSL_library_init=OPENSSL_init_ssl"
 FF_EXTRA_LDFLAGS=
 FF_DEP_LIBS=
 
-FF_MODULE_DIRS="compat libavcodec libavfilter libavformat libavutil libswresample libswscale"
+FF_MODULE_DIRS="compat libavcodec libavfilter libavfilter/dnn libavformat libavutil libswresample libswscale"
 FF_ASSEMBLER_SUB_DIRS=
 
 
@@ -118,7 +118,7 @@ elif [ "$FF_ARCH" = "x86" ]; then
     FF_CROSS_PREFIX=i686-linux-android16
     FF_TOOLCHAIN_NAME=x86-${FF_GCC_VER}
 
-    FF_CFG_FLAGS="$FF_CFG_FLAGS --arch=x86 --cpu=i686 --enable-yasm"
+    FF_CFG_FLAGS="$FF_CFG_FLAGS --arch=x86 --disable-x86asm"
 
     FF_EXTRA_CFLAGS="$FF_EXTRA_CFLAGS -march=atom -msse3 -ffast-math -mfpmath=sse"
     FF_EXTRA_LDFLAGS="$FF_EXTRA_LDFLAGS"
@@ -136,7 +136,7 @@ elif [ "$FF_ARCH" = "x86_64" ]; then
     FF_CROSS_PREFIX=x86_64-linux-android21
     FF_TOOLCHAIN_NAME=${FF_CROSS_PREFIX}-${FF_GCC_64_VER}
 
-    FF_CFG_FLAGS="$FF_CFG_FLAGS --arch=x86_64 --enable-yasm"
+    FF_CFG_FLAGS="$FF_CFG_FLAGS --arch=x86_64 --enable-x86asm"
 
     FF_EXTRA_CFLAGS="$FF_EXTRA_CFLAGS"
     FF_EXTRA_LDFLAGS="$FF_EXTRA_LDFLAGS"
@@ -154,7 +154,7 @@ elif [ "$FF_ARCH" = "arm64" ]; then
     FF_CROSS_PREFIX=aarch64-linux-android21
     FF_TOOLCHAIN_NAME=${FF_CROSS_PREFIX}-${FF_GCC_64_VER}
 
-    FF_CFG_FLAGS="$FF_CFG_FLAGS --arch=aarch64 --enable-yasm"
+    FF_CFG_FLAGS="$FF_CFG_FLAGS --arch=aarch64"
 
     FF_EXTRA_CFLAGS="$FF_EXTRA_CFLAGS"
     FF_EXTRA_LDFLAGS="$FF_EXTRA_LDFLAGS"
@@ -219,6 +219,7 @@ FF_CFLAGS="-O3 -Wall -pipe \
     -ffast-math \
     -fstrict-aliasing -Werror=strict-aliasing \
     -Wno-psabi -Wa,--noexecstack \
+    -fPIC \
     -DANDROID -DNDEBUG"
 
 # cause av_strlcpy crash with gcc4.7, gcc4.8
@@ -277,7 +278,7 @@ FF_CFG_FLAGS="$FF_CFG_FLAGS --ranlib=llvm-ranlib"
 # FF_CFG_FLAGS="$FF_CFG_FLAGS --disable-symver"
 
 if [ "$FF_ARCH" = "x86" ]; then
-    FF_CFG_FLAGS="$FF_CFG_FLAGS --disable-asm"
+    FF_CFG_FLAGS="$FF_CFG_FLAGS --disable-inline-asm"
 else
     # Optimization options (experts only):
     FF_CFG_FLAGS="$FF_CFG_FLAGS --enable-asm"
@@ -310,8 +311,6 @@ cd $FF_SOURCE
 if [ -f "./config.h" ]; then
     echo 'reuse configure'
 else
-    git checkout ./configure
-    git apply ../openssl.patch
     ./configure $FF_CFG_FLAGS \
         --extra-cflags="$FF_CFLAGS $FF_EXTRA_CFLAGS" \
         --extra-ldflags="$FF_DEP_LIBS $FF_EXTRA_LDFLAGS"
@@ -324,10 +323,19 @@ echo "--------------------"
 echo "[*] compile ffmpeg"
 echo "--------------------"
 cp config.* $FF_PREFIX
+
+git checkout libavformat/file.c
+git apply ../patches/0001_seekable_pipe.patch
+
 make $FF_MAKE_FLAGS > /dev/null
 make install
 mkdir -p $FF_PREFIX/include/libffmpeg
 cp -f config.h $FF_PREFIX/include/libffmpeg/config.h
+cp -f libavformat/*.h $FF_PREFIX/include/libavformat/
+cp -f libavcodec/*.h $FF_PREFIX/include/libavcodec/
+cp -f libavutil/*.h $FF_PREFIX/include/libavutil/
+
+
 
 #--------------------
 echo ""

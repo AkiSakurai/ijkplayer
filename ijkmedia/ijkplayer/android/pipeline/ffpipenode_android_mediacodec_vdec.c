@@ -79,9 +79,10 @@ typedef struct IJKFF_Pipenode_Opaque {
 
     AVCodecContext           *avctx; // not own
     AVCodecParameters        *codecpar;
-    AVBitStreamFilterContext *bsfc;  // own
 
 #if AMC_USE_AVBITSTREAM_FILTER
+    AVBitStreamFilterContext *bsfc;  // own
+
     uint8_t                  *orig_extradata;
     int                       orig_extradata_size;
 #else

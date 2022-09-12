@@ -29,6 +29,8 @@
 #include "ijkiomanager.h"
 #include "ijkplayer/ijkavutil/ijkdict.h"
 
+#include "../ijkavutil/dict_ext.h"
+
 typedef struct Context {
     AVClass *class;
     char *io_manager_ctx_intptr;

@@ -7,7 +7,7 @@ android {
     //noinspection GroovyAssignabilityCheck
 
     defaultConfig {
-        minSdkVersion 9
+        minSdkVersion 16
         targetSdkVersion rootProject.ext.targetSdkVersion
         externalNativeBuild{
             ndkBuild {

@@ -20,6 +20,7 @@
  */
 
 #ifndef __APPLE__
+#include <android/native_window.h>
 
 #include "ijksdl_egl.h"
 

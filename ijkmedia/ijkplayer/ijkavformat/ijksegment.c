@@ -26,7 +26,8 @@
 #include "libavutil/log.h"
 #include "libavutil/opt.h"
 
-#include "libavutil/application.h"
+#include "../ijkavutil/application.h"
+#include "../ijkavutil/dict_ext.h"
 
 typedef struct Context {
     AVClass        *class;

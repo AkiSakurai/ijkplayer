@@ -48,6 +48,7 @@
 #include "libavutil/avassert.h"
 #include "libavutil/time.h"
 #include "libavformat/avformat.h"
+#include "ijkavutil/dict_ext.h"
 #if CONFIG_AVDEVICE
 #include "libavdevice/avdevice.h"
 #endif
@@ -86,14 +87,15 @@
 #define AV_CODEC_CAP_DR1 CODEC_CAP_DR1
 #endif
 
-// FIXME: 9 work around NDKr8e or gcc4.7 bug
-// isnan() may not recognize some double NAN, so we test both double and float
-#if defined(__ANDROID__)
-#ifdef isnan
-#undef isnan
-#endif
-#define isnan(x) (isnan((double)(x)) || isnanf((float)(x)))
-#endif
+//fix in clang?
+//// FIXME: 9 work around NDKr8e or gcc4.7 bug
+//// isnan() may not recognize some double NAN, so we test both double and float
+//#if defined(__ANDROID__)
+//#ifdef isnan
+//#undef isnan
+//#endif
+//#define isnan(x) (isnan((double)(x)) || isnanf((float)(x)))
+//#endif
 
 #if defined(__ANDROID__)
 #define printf(...) ALOGD(__VA_ARGS__)
@@ -591,7 +593,7 @@ static int decoder_decode_frame(FFPlayer *ffp, Decoder *d, AVFrame *frame, AVSub
                         if (ret >= 0) {
                             AVRational tb = (AVRational){1, frame->sample_rate};
                             if (frame->pts != AV_NOPTS_VALUE)
-                                frame->pts = av_rescale_q(frame->pts, av_codec_get_pkt_timebase(d->avctx), tb);
+                                frame->pts = av_rescale_q(frame->pts, d->avctx->pkt_timebase, tb);
                             else if (d->next_pts != AV_NOPTS_VALUE)
                                 frame->pts = av_rescale_q(d->next_pts, d->next_pts_tb, tb);
                             if (frame->pts != AV_NOPTS_VALUE) {
@@ -3049,8 +3051,8 @@ static int is_realtime(AVFormatContext *s)
     )
         return 1;
 
-    if(s->pb && (   !strncmp(s->filename, "rtp:", 4)
-                 || !strncmp(s->filename, "udp:", 4)
+    if(s->pb && (   !strncmp(s->url, "rtp:", 4)
+                 || !strncmp(s->url, "udp:", 4)
                 )
     )
         return 1;
@@ -3380,7 +3382,7 @@ static int read_thread(void *arg)
             ret = avformat_seek_file(is->ic, -1, seek_min, seek_target, seek_max, is->seek_flags);
             if (ret < 0) {
                 av_log(NULL, AV_LOG_ERROR,
-                       "%s: error while seeking\n", is->ic->filename);
+                       "%s: error while seeking\n", is->ic->url);
             } else {
                 if (is->audio_stream >= 0) {
                     packet_queue_flush(&is->audioq);
@@ -3970,7 +3972,7 @@ const AVClass ffp_context_class = {
     .option           = ffp_context_options,
     .version          = LIBAVUTIL_VERSION_INT,
     .child_next       = ffp_context_child_next,
-    .child_class_next = ffp_context_child_class_next,
+    .child_class_iterate = ffp_context_child_class_next,
 };
 
 static const char *ijk_version_info()

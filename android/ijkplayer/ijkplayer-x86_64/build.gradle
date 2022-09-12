@@ -16,10 +16,14 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
-    sourceSets.main {
-        jniLibs.srcDirs 'src/main/libs'
-        // This prevents the auto generation of Android.mk
+
+    externalNativeBuild {
+        ndkBuild {
+            path '../ijkplayer-armv7a/src/main/jni/Android.mk'
+        }
     }
+
+    ndkVersion "23.2.8568313"
 }
 
 dependencies {

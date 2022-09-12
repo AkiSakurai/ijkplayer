@@ -39,7 +39,8 @@
 #include "libavformat/url.h"
 #include <stdint.h>
 
-#include "libavutil/application.h"
+#include "../ijkavutil/application.h"
+#include "../ijkavutil/dict_ext.h"
 
 #if HAVE_UNISTD_H
 #include <unistd.h>
