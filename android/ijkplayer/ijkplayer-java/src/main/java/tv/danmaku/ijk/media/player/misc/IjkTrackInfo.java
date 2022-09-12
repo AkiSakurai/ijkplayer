@@ -47,6 +47,22 @@ public class IjkTrackInfo implements ITrackInfo {
     }
 
     @Override
+    public String getTitle() {
+        if (mStreamMeta == null || TextUtils.isEmpty(mStreamMeta.mTitle))
+            return "und";
+
+        return mStreamMeta.mTitle;
+    }
+
+    @Override
+    public String getCodecName() {
+        if (mStreamMeta == null || TextUtils.isEmpty(mStreamMeta.mCodecName))
+            return "und";
+
+        return mStreamMeta.mCodecName;
+    }
+
+    @Override
     public int getTrackType() {
         return mTrackType;
     }

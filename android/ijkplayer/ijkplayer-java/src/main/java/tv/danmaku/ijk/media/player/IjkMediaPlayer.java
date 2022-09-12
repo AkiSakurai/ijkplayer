@@ -750,8 +750,8 @@ public final class IjkMediaPlayer extends AbstractMediaPlayer {
         _setPropertyFloat(FFP_PROP_FLOAT_PLAYBACK_RATE, speed);
     }
 
-    public float getSpeed(float speed) {
-        return _getPropertyFloat(FFP_PROP_FLOAT_PLAYBACK_RATE, .0f);
+    public float getSpeed() {
+        return _getPropertyFloat(FFP_PROP_FLOAT_PLAYBACK_RATE, 1.0f);
     }
 
     public int getVideoDecoder() {
@@ -1033,7 +1033,6 @@ public final class IjkMediaPlayer extends AbstractMediaPlayer {
                 // No real default action so far.
                 return;
             case MEDIA_TIMED_TEXT:
-                Log.i("MEDIA_TIMED_TEXT",  (String)msg.obj);
                 if (msg.obj == null) {
                     player.notifyOnTimedText(null);
                 } else {

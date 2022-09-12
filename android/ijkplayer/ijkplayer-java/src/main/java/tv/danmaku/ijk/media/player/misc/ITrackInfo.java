@@ -29,6 +29,10 @@ public interface ITrackInfo {
 
     String getLanguage();
 
+    String getTitle();
+
+    String getCodecName();
+
     int getTrackType();
 
     String getInfoInline();

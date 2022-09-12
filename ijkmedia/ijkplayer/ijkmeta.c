@@ -274,6 +274,10 @@ void ijkmeta_set_avformat_context_l(IjkMediaMeta *meta, AVFormatContext *ic)
         if (lang && lang->value)
             ijkmeta_set_string_l(stream_meta, IJKM_KEY_LANGUAGE, lang->value);
 
+        AVDictionaryEntry *entry = av_dict_get(st->metadata, "title", NULL, 0);
+        if(entry && entry->value)
+            ijkmeta_set_string_l(stream_meta, IJKM_KEY_TITLE, entry->value);
+
         ijkmeta_append_child_l(meta, stream_meta);
         stream_meta = NULL;
     }
