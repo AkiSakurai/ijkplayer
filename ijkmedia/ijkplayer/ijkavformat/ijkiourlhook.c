@@ -21,6 +21,8 @@
 
 #include <assert.h>
 #include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
 #include <inttypes.h>
 #include "ijkiourl.h"
 #include "ijkioprotocol.h"

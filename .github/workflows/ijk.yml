@@ -52,7 +52,8 @@ jobs:
            ./gradlew ijkplayer-armv7a:assembleRelease
            ./gradlew ijkplayer-x86:assembleRelease
            ./gradlew ijkplayer-x86_64:assembleRelease
-           
+           ./gradlew ijkplayer-java:assembleRelease
+
       - uses: actions/upload-artifact@v2
         with:
           name: Package

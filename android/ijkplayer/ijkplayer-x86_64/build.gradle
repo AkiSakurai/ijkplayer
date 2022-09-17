@@ -9,6 +9,11 @@ android {
     defaultConfig {
         minSdkVersion 21
         targetSdkVersion rootProject.ext.targetSdkVersion
+        externalNativeBuild{
+            ndkBuild {
+                abiFilters  "x86_64"
+            }
+        }
     }
     buildTypes {
         release {
