@@ -525,9 +525,17 @@ static int convert_image(FFPlayer *ffp, AVFrame *src_frame, int64_t src_frame_pt
         goto fail2;
     }
 
-    ret = avcodec_encode_video2(img_info->frame_img_codec_ctx, &avpkt, dst_frame, &got_packet);
+    ret = avcodec_send_frame(img_info->frame_img_codec_ctx, dst_frame);
 
-    if (ret >= 0 && got_packet > 0) {
+    if(ret < 0) {
+        ret = -1;
+        av_log(NULL, AV_LOG_ERROR, "%s avcodec_send_frame failed\n", __func__);
+        goto fail2;
+    }
+
+    ret = avcodec_receive_packet(img_info->frame_img_codec_ctx, &avpkt);
+
+    if (ret >= 0) {
         strcpy(file_path, img_info->img_path);
         strcat(file_path, "/");
         sprintf(file_name, "%lld", src_frame_pts);
@@ -834,9 +842,7 @@ static void free_picture(Frame *vp)
 static size_t parse_ass_subtitle(const char *ass, char *output)
 {
     char *tok = NULL;
-    tok = strchr(ass, ':'); if (tok) tok += 1; // skip event
-    tok = strchr(tok, ','); if (tok) tok += 1; // skip layer
-    tok = strchr(tok, ','); if (tok) tok += 1; // skip start_time
+    tok = strchr(ass, ','); if (tok) tok += 1; // skip start_time
     tok = strchr(tok, ','); if (tok) tok += 1; // skip end_time
     tok = strchr(tok, ','); if (tok) tok += 1; // skip style
     tok = strchr(tok, ','); if (tok) tok += 1; // skip name
@@ -2811,7 +2817,7 @@ static int stream_component_open(FFPlayer *ffp, int stream_index)
     VideoState *is = ffp->is;
     AVFormatContext *ic = is->ic;
     AVCodecContext *avctx;
-    AVCodec *codec = NULL;
+    const AVCodec *codec = NULL;
     const char *forced_codec_name = NULL;
     AVDictionary *opts = NULL;
     AVDictionaryEntry *t = NULL;
@@ -2829,7 +2835,7 @@ static int stream_component_open(FFPlayer *ffp, int stream_index)
     ret = avcodec_parameters_to_context(avctx, ic->streams[stream_index]->codecpar);
     if (ret < 0)
         goto fail;
-    av_codec_set_pkt_timebase(avctx, ic->streams[stream_index]->time_base);
+    avctx->pkt_timebase =  ic->streams[stream_index]->time_base;
 
     codec = avcodec_find_decoder(avctx->codec_id);
 
@@ -2851,12 +2857,12 @@ static int stream_component_open(FFPlayer *ffp, int stream_index)
     }
 
     avctx->codec_id = codec->id;
-    if(stream_lowres > av_codec_get_max_lowres(codec)){
+    if(stream_lowres > codec->max_lowres){
         av_log(avctx, AV_LOG_WARNING, "The maximum value for lowres supported by the decoder is %d\n",
-                av_codec_get_max_lowres(codec));
-        stream_lowres = av_codec_get_max_lowres(codec);
+               codec->max_lowres);
+        stream_lowres = codec->max_lowres;
     }
-    av_codec_set_lowres(avctx, stream_lowres);
+    avctx->lowres = stream_lowres;
 
 #if FF_API_EMU_EDGE
     if(stream_lowres) avctx->flags |= CODEC_FLAG_EMU_EDGE;
@@ -3776,27 +3782,6 @@ static int video_refresh_thread(void *arg)
     return 0;
 }
 
-static int lockmgr(void **mtx, enum AVLockOp op)
-{
-    switch (op) {
-    case AV_LOCK_CREATE:
-        *mtx = SDL_CreateMutex();
-        if (!*mtx) {
-            av_log(NULL, AV_LOG_FATAL, "SDL_CreateMutex(): %s\n", SDL_GetError());
-            return 1;
-        }
-        return 0;
-    case AV_LOCK_OBTAIN:
-        return !!SDL_LockMutex(*mtx);
-    case AV_LOCK_RELEASE:
-        return !!SDL_UnlockMutex(*mtx);
-    case AV_LOCK_DESTROY:
-        SDL_DestroyMutex(*mtx);
-        return 0;
-    }
-    return 1;
-}
-
 // FFP_MERGE: main
 
 /*****************************************************************************
@@ -3874,20 +3859,17 @@ void ffp_global_init()
 
     ALOGD("ijkmediaplayer version : %s", ijkmp_version());
     /* register all codecs, demux and protocols */
-    avcodec_register_all();
 #if CONFIG_AVDEVICE
     avdevice_register_all();
 #endif
 #if CONFIG_AVFILTER
     avfilter_register_all();
 #endif
-    av_register_all();
 
     ijkav_register_all();
 
     avformat_network_init();
 
-    av_lockmgr_register(lockmgr);
     av_log_set_callback(ffp_log_callback_brief);
 
     av_init_packet(&flush_pkt);
@@ -3901,7 +3883,6 @@ void ffp_global_uninit()
     if (!g_ffmpeg_global_inited)
         return;
 
-    av_lockmgr_register(NULL);
 
     // FFP_MERGE: uninit_opts
 

@@ -21,6 +21,7 @@
 #include "application.h"
 #include "libavformat/network.h"
 #include "libavutil/avstring.h"
+#include "libavutil/mem.h"
 
 void av_application_on_io_traffic(AVApplicationContext *h, AVAppIOTraffic *event);
 

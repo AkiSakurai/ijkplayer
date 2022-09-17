@@ -507,7 +507,6 @@ static int feed_input_buffer2(JNIEnv *env, IJKFF_Pipenode *node, int64_t timeUs,
                 d->next_pts_tb = d->start_pts_tb;
             }
         } while (ffp_is_flush_packet(&pkt) || d->queue->serial != d->pkt_serial);
-        av_packet_split_side_data(&pkt);
         av_packet_unref(&d->pkt);
         d->pkt_temp = d->pkt = pkt;
         d->packet_pending = 1;
@@ -515,7 +514,7 @@ static int feed_input_buffer2(JNIEnv *env, IJKFF_Pipenode *node, int64_t timeUs,
         if (opaque->ffp->mediacodec_handle_resolution_change &&
             opaque->codecpar->codec_id == AV_CODEC_ID_H264) {
             uint8_t  *size_data      = NULL;
-            int       size_data_size = 0;
+            size_t       size_data_size = 0;
             AVPacket *avpkt          = &d->pkt_temp;
             size_data = av_packet_get_side_data(avpkt, AV_PKT_DATA_NEW_EXTRADATA, &size_data_size);
             // minimum avcC(sps,pps) = 7
@@ -548,7 +547,16 @@ static int feed_input_buffer2(JNIEnv *env, IJKFF_Pipenode *node, int64_t timeUs,
                     return change_ret;
                 }
 
-                change_ret = avcodec_decode_video2(new_avctx, frame, &got_picture, avpkt);
+
+                change_ret = avcodec_send_frame(new_avctx, frame);
+
+                if(change_ret < 0) {
+                    avcodec_free_context(&new_avctx);
+                    return change_ret;
+                }
+
+                change_ret = avcodec_receive_packet(new_avctx, avpkt);
+
                 if (change_ret < 0) {
                     avcodec_free_context(&new_avctx);
                     return change_ret;
@@ -755,7 +763,6 @@ static int feed_input_buffer(JNIEnv *env, IJKFF_Pipenode *node, int64_t timeUs, 
                 d->next_pts_tb = d->start_pts_tb;
             }
         } while (ffp_is_flush_packet(&pkt) || d->queue->serial != d->pkt_serial);
-        av_packet_split_side_data(&pkt);
         av_packet_unref(&d->pkt);
         d->pkt_temp = d->pkt = pkt;
         d->packet_pending = 1;
@@ -763,7 +770,7 @@ static int feed_input_buffer(JNIEnv *env, IJKFF_Pipenode *node, int64_t timeUs, 
         if (opaque->ffp->mediacodec_handle_resolution_change &&
             opaque->codecpar->codec_id == AV_CODEC_ID_H264) {
             uint8_t  *size_data      = NULL;
-            int       size_data_size = 0;
+            size_t       size_data_size = 0;
             AVPacket *avpkt          = &d->pkt_temp;
             size_data = av_packet_get_side_data(avpkt, AV_PKT_DATA_NEW_EXTRADATA, &size_data_size);
             // minimum avcC(sps,pps) = 7
@@ -795,7 +802,15 @@ static int feed_input_buffer(JNIEnv *env, IJKFF_Pipenode *node, int64_t timeUs, 
                     return change_ret;
                 }
 
-                change_ret = avcodec_decode_video2(new_avctx, frame, &got_picture, avpkt);
+                change_ret = avcodec_send_frame(new_avctx, frame);
+
+                if(change_ret < 0) {
+                    avcodec_free_context(&new_avctx);
+                    return change_ret;
+                }
+
+                change_ret = avcodec_receive_packet(new_avctx, avpkt);
+
                 if (change_ret < 0) {
                     avcodec_free_context(&new_avctx);
                     return change_ret;
@@ -1500,7 +1515,7 @@ static int drain_output_buffer2(JNIEnv *env, IJKFF_Pipenode *node, int64_t timeU
                 }
             }
         }
-        ret = ffp_queue_picture(ffp, frame, pts, duration, av_frame_get_pkt_pos(frame), is->viddec.pkt_serial);
+        ret = ffp_queue_picture(ffp, frame, pts, duration, frame->pkt_pos, is->viddec.pkt_serial);
         if (ret) {
             if (frame->opaque)
                 SDL_VoutAndroid_releaseBufferProxyP(opaque->weak_vout, (SDL_AMediaCodecBufferProxy **)&frame->opaque, false);
@@ -1562,6 +1577,7 @@ fail:
 
 static int func_run_sync(IJKFF_Pipenode *node)
 {
+
     JNIEnv                *env      = NULL;
     IJKFF_Pipenode_Opaque *opaque   = node->opaque;
     FFPlayer              *ffp      = opaque->ffp;
@@ -1641,7 +1657,7 @@ static int func_run_sync(IJKFF_Pipenode *node)
                     }
                 }
             }
-            ret = ffp_queue_picture(ffp, frame, pts, duration, av_frame_get_pkt_pos(frame), is->viddec.pkt_serial);
+            ret = ffp_queue_picture(ffp, frame, pts, duration, frame->pkt_pos, is->viddec.pkt_serial);
             if (ret) {
                 if (frame->opaque)
                     SDL_VoutAndroid_releaseBufferProxyP(opaque->weak_vout, (SDL_AMediaCodecBufferProxy **)&frame->opaque, false);
