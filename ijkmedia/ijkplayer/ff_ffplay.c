@@ -20,6 +20,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#define __USE_GNU
 #include "ff_ffplay.h"
 
 /**
@@ -87,15 +88,15 @@
 #define AV_CODEC_CAP_DR1 CODEC_CAP_DR1
 #endif
 
-//fix in clang?
+//still happens on ndk 23
 //// FIXME: 9 work around NDKr8e or gcc4.7 bug
 //// isnan() may not recognize some double NAN, so we test both double and float
-//#if defined(__ANDROID__)
-//#ifdef isnan
-//#undef isnan
-//#endif
-//#define isnan(x) (isnan((double)(x)) || isnanf((float)(x)))
-//#endif
+#if defined(__ANDROID__)
+#ifdef isnan
+#undef isnan
+#endif
+#define isnan(x) (isnan((double)(x)) || isnanf((float)(x)))
+#endif
 
 #if defined(__ANDROID__)
 #define printf(...) ALOGD(__VA_ARGS__)
