@@ -51,6 +51,8 @@ esac
 #--------------------
 # common defines
 FF_ARCH=$1
+FF_PLATFORM=$2
+
 if [ -z "$FF_ARCH" ]; then
     echo "You must specific an architecture 'armv7, armv7s, arm64, i386, x86_64, ...'.\n"
     exit 1
@@ -68,12 +70,6 @@ OPENSSL_CFG_FLAGS=
 OPENSSL_EXTRA_CFLAGS=
 OPENSSL_CFG_CPU=
 
-# i386, x86_64
-OPENSSL_CFG_FLAGS_SIMULATOR=
-
-# armv7, armv7s, arm64
-OPENSSL_CFG_FLAGS_ARM=
-OPENSSL_CFG_FLAGS_ARM="iphoneos-cross"
 
 echo "build_root: $FF_BUILD_ROOT"
 
@@ -83,41 +79,28 @@ echo "[*] config arch $FF_ARCH"
 echo "===================="
 
 FF_BUILD_NAME="unknown"
-FF_XCRUN_PLATFORM="iPhoneOS"
+FF_XCRUN_PLATFORM=$FF_PLATFORM
 FF_XCRUN_OSVERSION=
 FF_GASPP_EXPORT=
-FF_XCODE_BITCODE=
 
-if [ "$FF_ARCH" = "i386" ]; then
-    FF_BUILD_NAME="openssl-i386"
-    FF_XCRUN_PLATFORM="iPhoneSimulator"
-    FF_XCRUN_OSVERSION="-mios-simulator-version-min=6.0"
-    OPENSSL_CFG_FLAGS="darwin-i386-cc $OPENSSL_CFG_FLAGS"
-elif [ "$FF_ARCH" = "x86_64" ]; then
-    FF_BUILD_NAME="openssl-x86_64"
-    FF_XCRUN_PLATFORM="iPhoneSimulator"
-    FF_XCRUN_OSVERSION="-mios-simulator-version-min=7.0"
+if [ "$FF_ARCH" = "x86_64" ]; then
+    FF_BUILD_NAME="openssl-x86_64-$FF_PLATFORM"
     OPENSSL_CFG_FLAGS="darwin64-x86_64-cc $OPENSSL_CFG_FLAGS"
-elif [ "$FF_ARCH" = "armv7" ]; then
-    FF_BUILD_NAME="openssl-armv7"
-    FF_XCRUN_OSVERSION="-miphoneos-version-min=6.0"
-    FF_XCODE_BITCODE="-fembed-bitcode"
-    OPENSSL_CFG_FLAGS="$OPENSSL_CFG_FLAGS_ARM $OPENSSL_CFG_FLAGS"
-#    OPENSSL_CFG_CPU="--cpu=cortex-a8"
-elif [ "$FF_ARCH" = "armv7s" ]; then
-    FF_BUILD_NAME="openssl-armv7s"
-    OPENSSL_CFG_CPU="--cpu=swift"
-    FF_XCRUN_OSVERSION="-miphoneos-version-min=6.0"
-    FF_XCODE_BITCODE="-fembed-bitcode"
-    OPENSSL_CFG_FLAGS="$OPENSSL_CFG_FLAGS_ARM $OPENSSL_CFG_FLAGS"
 elif [ "$FF_ARCH" = "arm64" ]; then
-    FF_BUILD_NAME="openssl-arm64"
-    FF_XCRUN_OSVERSION="-miphoneos-version-min=7.0"
-    FF_XCODE_BITCODE="-fembed-bitcode"
-    OPENSSL_CFG_FLAGS="$OPENSSL_CFG_FLAGS_ARM $OPENSSL_CFG_FLAGS"
+    FF_BUILD_NAME="openssl-arm64-$FF_PLATFORM"
+    OPENSSL_CFG_FLAGS="darwin64-arm64-cc $OPENSSL_CFG_FLAGS"
     FF_GASPP_EXPORT="GASPP_FIX_XCODE5=1"
 else
     echo "unknown architecture $FF_ARCH";
+    exit 1
+fi
+
+if [ "$FF_PLATFORM" = "iphoneos" ]; then
+    FF_XCRUN_OSVERSION="-miphoneos-version-min=12.0"
+elif [ "$FF_PLATFORM" = "iphonesimulator" ]; then
+    FF_XCRUN_OSVERSION="-mios-simulator-version-min=12.0"
+else
+    echo "unknown platform $FF_PLATFORM"
     exit 1
 fi
 
@@ -142,16 +125,12 @@ FF_XCRUN_SDK_PLATFORM_PATH=`xcrun -sdk $FF_XCRUN_SDK --show-sdk-platform-path`
 FF_XCRUN_SDK_PATH=`xcrun -sdk $FF_XCRUN_SDK --show-sdk-path`
 FF_XCRUN_CC="xcrun -sdk $FF_XCRUN_SDK clang"
 
-export CROSS_TOP="$FF_XCRUN_SDK_PLATFORM_PATH/Developer"
-export CROSS_SDK=`echo ${FF_XCRUN_SDK_PATH/#$CROSS_TOP\/SDKs\//}`
-export BUILD_TOOL="$FF_XCRUN_DEVELOPER"
-export CC="$FF_XCRUN_CC -arch $FF_ARCH $FF_XCRUN_OSVERSION"
+
+export CC="$FF_XCRUN_CC -arch $FF_ARCH $FF_XCRUN_OSVERSION -isysroot $FF_XCRUN_SDK_PATH"
 
 echo "build_source: $FF_BUILD_SOURCE"
 echo "build_prefix: $FF_BUILD_PREFIX"
-echo "CROSS_TOP: $CROSS_TOP"
-echo "CROSS_SDK: $CROSS_SDK"
-echo "BUILD_TOOL: $BUILD_TOOL"
+
 echo "CC: $CC"
 
 #--------------------
@@ -159,8 +138,10 @@ echo "\n--------------------"
 echo "[*] configurate openssl"
 echo "--------------------"
 
-OPENSSL_CFG_FLAGS="$OPENSSL_CFG_FLAGS $FF_XCODE_BITCODE"
 OPENSSL_CFG_FLAGS="$OPENSSL_CFG_FLAGS --openssldir=$FF_BUILD_PREFIX"
+OPENSSL_CFG_FLAGS="$OPENSSL_CFG_FLAGS --prefix=$FF_BUILD_PREFIX"
+OPENSSL_CFG_FLAGS="$OPENSSL_CFG_FLAGS no-shared"
+OPENSSL_CFG_FLAGS="$OPENSSL_CFG_FLAGS no-tests"
 
 # xcode configuration
 export DEBUG_INFORMATION_FORMAT=dwarf-with-dsym
@@ -181,4 +162,4 @@ echo "[*] compile openssl"
 echo "--------------------"
 set +e
 make
-make install_sw
+make install_dev

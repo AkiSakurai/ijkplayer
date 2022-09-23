@@ -1,4 +1,4 @@
-#! /usr/bin/env bash
+#! /usr/bin/env zsh
 #
 # Copyright (C) 2013-2014 Bilibili
 # Copyright (C) 2013-2014 Zhang Rui <bbcallen@gmail.com>
@@ -19,11 +19,8 @@
 #----------
 # modify for your build tool
 
-FF_ALL_ARCHS_IOS6_SDK="armv7 armv7s i386"
-FF_ALL_ARCHS_IOS7_SDK="armv7 armv7s arm64 i386 x86_64"
-FF_ALL_ARCHS_IOS8_SDK="armv7 arm64 i386 x86_64"
-
-FF_ALL_ARCHS=$FF_ALL_ARCHS_IOS8_SDK
+declare -A FF_ALL_ARCHS
+FF_ALL_ARCHS=([iphoneos]="arm64" [iphonesimulator]="arm64 x86_64")
 
 #----------
 UNI_BUILD_ROOT=`pwd`
@@ -43,77 +40,86 @@ echo_archs() {
 
 FF_LIBS="libavcodec libavfilter libavformat libavutil libswscale libswresample"
 do_lipo_ffmpeg () {
-    LIB_FILE=$1
-    LIPO_FLAGS=
-    for ARCH in $FF_ALL_ARCHS
+    LIB_FILE=$1.a
+    LIB_NAME=$1
+    declare -A LIPO_FLAGS
+
+    LIBS=
+
+    for PLATFORM in ${(k)FF_ALL_ARCHS}
     do
-        ARCH_LIB_FILE="$UNI_BUILD_ROOT/build/ffmpeg-$ARCH/output/lib/$LIB_FILE"
-        if [ -f "$ARCH_LIB_FILE" ]; then
-            LIPO_FLAGS="$LIPO_FLAGS $ARCH_LIB_FILE"
-        else
-            echo "skip $LIB_FILE of $ARCH";
-        fi
+        for ARCH in $=FF_ALL_ARCHS[$PLATFORM]
+        do
+            ARCH_LIB_FILE="$UNI_BUILD_ROOT/build/ffmpeg-$ARCH-$PLATFORM/output/lib/$LIB_FILE"
+            echo $ARCH_LIB_FILE
+            if [ -f "$ARCH_LIB_FILE" ]; then
+                LIPO_FLAGS[$PLATFORM]="${LIPO_FLAGS[$PLATFORM]} $ARCH_LIB_FILE"
+            else
+                echo "skip $LIB_FILE of $ARCH";
+            fi
+        done
+
+        xcrun lipo -create $=LIPO_FLAGS[$PLATFORM] -output $UNI_BUILD_ROOT/build/$PLATFORM/lib/$LIB_FILE
+        xcrun lipo -info $UNI_BUILD_ROOT/build/$PLATFORM/lib/$LIB_FILE
     done
 
-    xcrun lipo -create $LIPO_FLAGS -output $UNI_BUILD_ROOT/build/universal/lib/$LIB_FILE
-    xcrun lipo -info $UNI_BUILD_ROOT/build/universal/lib/$LIB_FILE
 }
 
-SSL_LIBS="libcrypto libssl"
-do_lipo_ssl () {
-    LIB_FILE=$1
-    LIPO_FLAGS=
-    for ARCH in $FF_ALL_ARCHS
-    do
-        ARCH_LIB_FILE="$UNI_BUILD_ROOT/build/openssl-$ARCH/output/lib/$LIB_FILE"
-        if [ -f "$ARCH_LIB_FILE" ]; then
-            LIPO_FLAGS="$LIPO_FLAGS $ARCH_LIB_FILE"
-        else
-            echo "skip $LIB_FILE of $ARCH";
-        fi
-    done
 
-    if [ "$LIPO_FLAGS" != "" ]; then
-        xcrun lipo -create $LIPO_FLAGS -output $UNI_BUILD_ROOT/build/universal/lib/$LIB_FILE
-        xcrun lipo -info $UNI_BUILD_ROOT/build/universal/lib/$LIB_FILE
-    fi
-}
 
 do_lipo_all () {
-    mkdir -p $UNI_BUILD_ROOT/build/universal/lib
+
     echo "lipo archs: $FF_ALL_ARCHS"
-    for FF_LIB in $FF_LIBS
+
+    for PLATFORM in ${(k)FF_ALL_ARCHS}
     do
-        do_lipo_ffmpeg "$FF_LIB.a";
+        mkdir -p $UNI_BUILD_ROOT/build/$PLATFORM/lib
     done
 
-    ANY_ARCH=
-    for ARCH in $FF_ALL_ARCHS
+    for FF_LIB in $=FF_LIBS
     do
-        ARCH_INC_DIR="$UNI_BUILD_ROOT/build/ffmpeg-$ARCH/output/include"
-        if [ -d "$ARCH_INC_DIR" ]; then
-            if [ -z "$ANY_ARCH" ]; then
-                ANY_ARCH=$ARCH
-                cp -R "$ARCH_INC_DIR" "$UNI_BUILD_ROOT/build/universal/"
+        do_lipo_ffmpeg "$FF_LIB";
+    done
+
+    FRAMEWORKS_FLAGS=
+    for PLATFORM in ${(k)FF_ALL_ARCHS}
+    do
+        ANY_ARCH=
+        for ARCH in $=FF_ALL_ARCHS[$PLATFORM]
+        do
+            ARCH_INC_DIR="$UNI_BUILD_ROOT/build/ffmpeg-$ARCH-$PLATFORM/output/include"
+
+            if [ -d "$ARCH_INC_DIR" ]; then
+                if [ -z "$ANY_ARCH" ]; then
+                    ANY_ARCH=$ARCH
+                    cp -R "$ARCH_INC_DIR" "$UNI_BUILD_ROOT/build/$PLATFORM/"
+                fi
+
+                UNI_INC_DIR="$UNI_BUILD_ROOT/build/$PLATFORM/include"
+
+                mkdir -p "$UNI_INC_DIR/libavutil/$ARCH"
+                cp -f "$ARCH_INC_DIR/libavutil/avconfig.h"  "$UNI_INC_DIR/libavutil/$ARCH/avconfig.h"
+                cp -f tools/avconfig.h                      "$UNI_INC_DIR/libavutil/avconfig.h"
+                cp -f "$ARCH_INC_DIR/libavutil/ffversion.h" "$UNI_INC_DIR/libavutil/$ARCH/ffversion.h"
+                cp -f tools/ffversion.h                     "$UNI_INC_DIR/libavutil/ffversion.h"
+                mkdir -p "$UNI_INC_DIR/libffmpeg/$ARCH"
+                cp -f "$ARCH_INC_DIR/libffmpeg/config.h"    "$UNI_INC_DIR/libffmpeg/$ARCH/config.h"
+                cp -f tools/config.h                        "$UNI_INC_DIR/libffmpeg/config.h"
             fi
+        done
 
-            UNI_INC_DIR="$UNI_BUILD_ROOT/build/universal/include"
+        LIB_FILES=
+        for FF_LIB in $=FF_LIBS
+        do
+            LIB_FILES="$LIB_FILES $UNI_BUILD_ROOT/build/$PLATFORM/lib/$FF_LIB.a"
+        done
 
-            mkdir -p "$UNI_INC_DIR/libavutil/$ARCH"
-            cp -f "$ARCH_INC_DIR/libavutil/avconfig.h"  "$UNI_INC_DIR/libavutil/$ARCH/avconfig.h"
-            cp -f tools/avconfig.h                      "$UNI_INC_DIR/libavutil/avconfig.h"
-            cp -f "$ARCH_INC_DIR/libavutil/ffversion.h" "$UNI_INC_DIR/libavutil/$ARCH/ffversion.h"
-            cp -f tools/ffversion.h                     "$UNI_INC_DIR/libavutil/ffversion.h"
-            mkdir -p "$UNI_INC_DIR/libffmpeg/$ARCH"
-            cp -f "$ARCH_INC_DIR/libffmpeg/config.h"    "$UNI_INC_DIR/libffmpeg/$ARCH/config.h"
-            cp -f tools/config.h                        "$UNI_INC_DIR/libffmpeg/config.h"
-        fi
+        xcrun -sdk $PLATFORM libtool -static $=LIB_FILES -o $UNI_BUILD_ROOT/build/$PLATFORM/lib/ffmpeg.a
+        FRAMEWORKS_FLAGS="$FRAMEWORKS_FLAGS  -library $UNI_BUILD_ROOT/build/$PLATFORM/lib/ffmpeg.a -headers $UNI_BUILD_ROOT/build/$PLATFORM/include"
     done
 
-    for SSL_LIB in $SSL_LIBS
-    do
-        do_lipo_ssl "$SSL_LIB.a";
-    done
+    rm -rf $UNI_BUILD_ROOT/build/ffmpeg.xcframework
+    xcodebuild -create-xcframework $=FRAMEWORKS_FLAGS -output $UNI_BUILD_ROOT/build/ffmpeg.xcframework
 }
 
 #----------
@@ -130,9 +136,12 @@ elif [ "$FF_TARGET" = "lipo" ]; then
     do_lipo_all
 elif [ "$FF_TARGET" = "all" ]; then
     echo_archs
-    for ARCH in $FF_ALL_ARCHS
+    for PLATFORM in ${(k)FF_ALL_ARCHS}
     do
-        sh tools/do-compile-ffmpeg.sh $ARCH $FF_TARGET_EXTRA
+        for ARCH in $=FF_ALL_ARCHS[$PLATFORM]
+        do
+            sh tools/do-compile-ffmpeg.sh $ARCH $PLATFORM $FF_TARGET_EXTRA
+        done
     done
 
     do_lipo_all
@@ -149,10 +158,7 @@ elif [ "$FF_TARGET" = "clean" ]; then
     done
     echo "clean build cache"
     echo "================="
-    rm -rf build/ffmpeg-*
-    rm -rf build/openssl-*
-    rm -rf build/universal/include
-    rm -rf build/universal/lib
+    rm -rf build/ffmpeg*
     echo "clean success"
 else
     echo "Usage:"

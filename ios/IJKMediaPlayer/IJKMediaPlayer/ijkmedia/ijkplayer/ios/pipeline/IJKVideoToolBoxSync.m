@@ -551,9 +551,9 @@ static int decode_video_internal(Ijk_VideoToolBox_Opaque* context, AVCodecContex
         goto failed;
     }
 
-    if (avpkt->flags & AV_PKT_FLAG_NEW_SEG) {
-        context->new_seg_flag = true;
-    }
+//    if (avpkt->flags & AV_PKT_FLAG_NEW_SEG) {
+//        context->new_seg_flag = true;
+//    }
 
     sample_info = &context->sample_info;
     if (!sample_info) {
@@ -623,7 +623,7 @@ static inline void DuplicatePkt(Ijk_VideoToolBox_Opaque* context, const AVPacket
         ResetPktBuffer(context);
     }
     AVPacket* avpkt = &context->m_buffer_packet[context->m_buffer_deep];
-    av_copy_packet(avpkt, pkt);
+    av_packet_ref(avpkt, pkt);
     context->m_buffer_deep++;
 }
 
@@ -633,7 +633,7 @@ static int decode_video(Ijk_VideoToolBox_Opaque* context, AVCodecContext *avctx,
 {
     int      ret            = 0;
     uint8_t *size_data      = NULL;
-    int      size_data_size = 0;
+    size_t      size_data_size = 0;
 
     if (!avpkt || !avpkt->data) {
         return 0;
@@ -657,7 +657,7 @@ static int decode_video(Ijk_VideoToolBox_Opaque* context, AVCodecContext *avctx,
             if (!new_avctx->extradata)
                 return AVERROR(ENOMEM);
             memcpy(new_avctx->extradata, size_data, size_data_size);
-            new_avctx->extradata_size = size_data_size;
+            new_avctx->extradata_size = (int)size_data_size;
 
             av_dict_set(&codec_opts, "threads", "1", 0);
             ret = avcodec_open2(new_avctx, avctx->codec, &codec_opts);
@@ -667,7 +667,15 @@ static int decode_video(Ijk_VideoToolBox_Opaque* context, AVCodecContext *avctx,
                 return ret;
             }
 
-            ret = avcodec_decode_video2(new_avctx, frame, &got_picture, avpkt);
+            ret = avcodec_send_frame(new_avctx, frame);
+
+            if(ret < 0) {
+               avcodec_free_context(&new_avctx);
+               return ret;
+            }
+
+            ret = avcodec_receive_packet(new_avctx, avpkt);
+
             if (ret < 0) {
                 avcodec_free_context(&new_avctx);
                 return ret;
@@ -854,8 +862,6 @@ int videotoolbox_sync_decode_frame(Ijk_VideoToolBox_Opaque* context)
                     d->next_pts_tb = d->start_pts_tb;
                 }
             } while (ffp_is_flush_packet(&pkt) || d->queue->serial != d->pkt_serial);
-
-            av_packet_split_side_data(&pkt);
 
             av_packet_unref(&d->pkt);
             d->pkt_temp = d->pkt = pkt;
