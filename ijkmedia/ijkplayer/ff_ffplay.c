@@ -49,6 +49,7 @@
 #include "libavutil/avassert.h"
 #include "libavutil/time.h"
 #include "libavformat/avformat.h"
+#include "libavcodec/ass_split.h"
 #include "ijkavutil/dict_ext.h"
 #if CONFIG_AVDEVICE
 #include "libavdevice/avdevice.h"
@@ -728,6 +729,10 @@ static Frame *frame_queue_peek_next(FrameQueue *f)
 {
     return &f->queue[(f->rindex + f->rindex_shown + 1) % f->max_size];
 }
+static Frame *frame_queue_peek_at(FrameQueue *f, int at)
+{
+    return &f->queue[(f->rindex + f->rindex_shown + at) % f->max_size];
+}
 
 static Frame *frame_queue_peek_last(FrameQueue *f)
 {
@@ -840,71 +845,264 @@ static void free_picture(Frame *vp)
 // FFP_MERGE: upload_texture
 // FFP_MERGE: video_image_display
 
-static size_t parse_ass_subtitle(const char *ass, char *output)
-{
-    char *tok = NULL;
-    tok = strchr(ass, ','); if (tok) tok += 1; // skip start_time
-    tok = strchr(tok, ','); if (tok) tok += 1; // skip end_time
-    tok = strchr(tok, ','); if (tok) tok += 1; // skip style
-    tok = strchr(tok, ','); if (tok) tok += 1; // skip name
-    tok = strchr(tok, ','); if (tok) tok += 1; // skip margin_l
-    tok = strchr(tok, ','); if (tok) tok += 1; // skip margin_r
-    tok = strchr(tok, ','); if (tok) tok += 1; // skip margin_v
-    tok = strchr(tok, ','); if (tok) tok += 1; // skip effect
-    if (tok) {
-        char *text = tok;
-        size_t idx = 0;
-        do {
-            char *found = strstr(text, "\\N");
-            if (found) {
-                size_t n = found - text;
-                memcpy(output+idx, text, n);
-                output[idx + n] = '\n';
-                idx = n + 1;
-                text = found + 2;
-            }
-            else {
-                size_t left_text_len = strlen(text);
-                memcpy(output+idx, text, left_text_len);
-                if (output[idx + left_text_len - 1] == '\n')
-                    output[idx + left_text_len - 1] = '\0';
-                else
-                    output[idx + left_text_len] = '\0';
-                break;
-            }
-        } while(1);
-        return strlen(output) + 1;
+static size_t max_subtitle_length(const AVSubtitle* sub) {
+    size_t length = 0;
+    for(int i = 0; i < sub->num_rects; i++) {
+        if(sub->rects[i]->text) {
+            length += strlen(sub->rects[i]->text);
+        } else if(sub->rects[i]->ass) {
+            length += strlen(sub->rects[i]->ass) ;
+        }
     }
+    return length + 1;
+}
+
+typedef struct{
+    char* output;
+    int paint_mode;
+} ASSContext;
+
+typedef struct  {
+    /**
+     * @defgroup ass_styles    ASS styles
+     * @{
+     */
+    void (*text)(void *priv, const char *text, int len);
+    void (*new_line)(void *priv, int forced);
+    void (*style)(void *priv, char style, int close);
+    void (*color)(void *priv, unsigned int /* color */, unsigned int color_id);
+    void (*alpha)(void *priv, int alpha, int alpha_id);
+    void (*font_name)(void *priv, const char *name);
+    void (*font_size)(void *priv, int size);
+    void (*alignment)(void *priv, int alignment);
+    void (*cancel_overrides)(void *priv, const char *style);
+    /** @} */
+
+    /**
+     * @defgroup ass_functions    ASS functions
+     * @{
+     */
+    void (*move)(void *priv, int x1, int y1, int x2, int y2, int t1, int t2);
+    void (*origin)(void *priv, int x, int y);
+    /** @} */
+
+    /**
+     * @defgroup ass_end    end of Dialogue Event
+     * @{
+     */
+    void (*end)(void *priv);
+    /** @} */
+    void (*paint_mode)(void *priv, int mode);
+} ASSCodesCallbacksV2;
+
+static void ff_text_cb(void *priv, const char *text, int len)
+{
+    ASSContext* ctx = priv;
+    if(ctx->paint_mode == 0)
+        strncat(ctx->output, text, len);
+    ctx->output += len;
+}
+
+static void ff_new_line_cb(void *priv, int forced)
+{
+    char **dst = priv;
+    strncat(*dst, "\n", 1);
+    *dst += 1;
+}
+
+static void ff_paint_mode(void *priv, int paint_mode)
+{
+    ASSContext* ctx = priv;
+    ctx->paint_mode = paint_mode;
+}
+
+static const ASSCodesCallbacksV2 ff_ass_callback = {
+        .text             = ff_text_cb,
+        .new_line         = ff_new_line_cb,
+        .style            = NULL,
+        .color            = NULL,
+        .font_name        = NULL,
+        .font_size        = NULL,
+        .alignment        = NULL,
+        .cancel_overrides = NULL,
+        .move             = NULL,
+        .end              = NULL,
+        .paint_mode = ff_paint_mode
+};
+
+int ff_ass_split_override_codes_v2(const ASSCodesCallbacksV2 *callbacks, void *priv,
+                                const char *buf)
+{
+    const char *text = NULL;
+    char new_line[2];
+    int text_len = 0;
+
+    while (buf && *buf) {
+        if (text && callbacks->text &&
+            (sscanf(buf, "\\%1[nN]", new_line) == 1 ||
+             !strncmp(buf, "{\\", 2))) {
+            callbacks->text(priv, text, text_len);
+            text = NULL;
+        }
+        if (sscanf(buf, "\\%1[nN]", new_line) == 1) {
+            if (callbacks->new_line)
+                callbacks->new_line(priv, new_line[0] == 'N');
+            buf += 2;
+        } else if (!strncmp(buf, "{\\", 2)) {
+            buf++;
+            while (*buf == '\\') {
+                char style[2], c[2], sep[2], c_num[2] = "0", tmp[128] = {0};
+                unsigned int color = 0xFFFFFFFF;
+                int len, size = -1, an = -1, alpha = -1;
+                int x1, y1, x2, y2, t1 = -1, t2 = -1;
+                int paint_mode = 0;
+                if (sscanf(buf, "\\%1[bisu]%1[01\\}]%n", style, c, &len) > 1) {
+                    int close = c[0] == '0' ? 1 : c[0] == '1' ? 0 : -1;
+                    len += close != -1;
+                    if (callbacks->style)
+                        callbacks->style(priv, style[0], close);
+                } else if (sscanf(buf, "\\c%1[\\}]%n", sep, &len) > 0 ||
+                           sscanf(buf, "\\c&H%X&%1[\\}]%n", &color, sep, &len) > 1 ||
+                           sscanf(buf, "\\%1[1234]c%1[\\}]%n", c_num, sep, &len) > 1 ||
+                           sscanf(buf, "\\%1[1234]c&H%X&%1[\\}]%n", c_num, &color, sep, &len) > 2) {
+                    if (callbacks->color)
+                        callbacks->color(priv, color, c_num[0] - '0');
+                } else if (sscanf(buf, "\\alpha%1[\\}]%n", sep, &len) > 0 ||
+                           sscanf(buf, "\\alpha&H%2X&%1[\\}]%n", &alpha, sep, &len) > 1 ||
+                           sscanf(buf, "\\%1[1234]a%1[\\}]%n", c_num, sep, &len) > 1 ||
+                           sscanf(buf, "\\%1[1234]a&H%2X&%1[\\}]%n", c_num, &alpha, sep, &len) > 2) {
+                    if (callbacks->alpha)
+                        callbacks->alpha(priv, alpha, c_num[0] - '0');
+                } else if (sscanf(buf, "\\fn%1[\\}]%n", sep, &len) > 0 ||
+                           sscanf(buf, "\\fn%127[^\\}]%1[\\}]%n", tmp, sep, &len) > 1) {
+                    if (callbacks->font_name)
+                        callbacks->font_name(priv, tmp[0] ? tmp : NULL);
+                } else if (sscanf(buf, "\\fs%1[\\}]%n", sep, &len) > 0 ||
+                           sscanf(buf, "\\fs%u%1[\\}]%n", &size, sep, &len) > 1) {
+                    if (callbacks->font_size)
+                        callbacks->font_size(priv, size);
+                } else if (sscanf(buf, "\\a%1[\\}]%n", sep, &len) > 0 ||
+                           sscanf(buf, "\\a%2u%1[\\}]%n", &an, sep, &len) > 1 ||
+                           sscanf(buf, "\\an%1[\\}]%n", sep, &len) > 0 ||
+                           sscanf(buf, "\\an%1u%1[\\}]%n", &an, sep, &len) > 1) {
+                    if (an != -1 && buf[2] != 'n')
+                        an = (an&3) + (an&4 ? 6 : an&8 ? 3 : 0);
+                    if (callbacks->alignment)
+                        callbacks->alignment(priv, an);
+                } else if (sscanf(buf, "\\r%1[\\}]%n", sep, &len) > 0 ||
+                           sscanf(buf, "\\r%127[^\\}]%1[\\}]%n", tmp, sep, &len) > 1) {
+                    if (callbacks->cancel_overrides)
+                        callbacks->cancel_overrides(priv, tmp);
+                } else if (sscanf(buf, "\\move(%d,%d,%d,%d)%1[\\}]%n", &x1, &y1, &x2, &y2, sep, &len) > 4 ||
+                           sscanf(buf, "\\move(%d,%d,%d,%d,%d,%d)%1[\\}]%n", &x1, &y1, &x2, &y2, &t1, &t2, sep, &len) > 6) {
+                    if (callbacks->move)
+                        callbacks->move(priv, x1, y1, x2, y2, t1, t2);
+                } else if (sscanf(buf, "\\pos(%d,%d)%1[\\}]%n", &x1, &y1, sep, &len) > 2) {
+                    if (callbacks->move)
+                        callbacks->move(priv, x1, y1, x1, y1, -1, -1);
+                } else if (sscanf(buf, "\\org(%d,%d)%1[\\}]%n", &x1, &y1, sep, &len) > 2) {
+                    if (callbacks->origin)
+                        callbacks->origin(priv, x1, y1);
+                } else if (sscanf(buf, "\\p%u%1[\\}]%n", &paint_mode, sep, &len) > 1) {
+                    if (callbacks->paint_mode)
+                        callbacks->paint_mode(priv, paint_mode);
+                } else {
+                    len = strcspn(buf+1, "\\}") + 2;  /* skip unknown code */
+                }
+                buf += len - 1;
+            }
+            if (*buf++ != '}')
+                return AVERROR_INVALIDDATA;
+        } else {
+            if (!text) {
+                text = buf;
+                text_len = 1;
+            } else
+                text_len++;
+            buf++;
+        }
+    }
+    if (text && callbacks->text)
+        callbacks->text(priv, text, text_len);
+    if (callbacks->end)
+        callbacks->end(priv);
     return 0;
+}
+
+static void parse_ass_subtitle(const char *ass, char *output)
+{
+    ASSDialog* dialog = ff_ass_split_dialog(NULL, ass);
+
+    if(!dialog) {
+        return;
+    }
+
+    ASSContext ass_ctx = {
+            .paint_mode = 0,
+            .output = output
+    };
+
+    if(dialog->text)
+        ff_ass_split_override_codes_v2(&ff_ass_callback, &ass_ctx, dialog->text);
+
+    ff_ass_free_dialog(&dialog);
 }
 
 static void video_image_display2(FFPlayer *ffp)
 {
     VideoState *is = ffp->is;
     Frame *vp;
-    Frame *sp = NULL;
 
     vp = frame_queue_peek_last(&is->pictq);
 
     if (vp->bmp) {
         if (is->subtitle_st) {
-            if (frame_queue_nb_remaining(&is->subpq) > 0) {
-                sp = frame_queue_peek(&is->subpq);
 
-                if (vp->pts >= sp->pts + ((float) sp->sub.start_display_time / 1000)) {
-                    if (!sp->uploaded) {
-                        if (sp->sub.num_rects > 0) {
-                            char buffered_text[4096];
-                            if (sp->sub.rects[0]->text) {
-                                strncpy(buffered_text, sp->sub.rects[0]->text, 4096);
-                            }
-                            else if (sp->sub.rects[0]->ass) {
-                                parse_ass_subtitle(sp->sub.rects[0]->ass, buffered_text);
-                            }
-                            ffp_notify_msg4(ffp, FFP_MSG_TIMED_TEXT, 0, 0, buffered_text, sizeof(buffered_text));
+            if (frame_queue_nb_remaining(&is->subpq) > 0) {
+                int nb = frame_queue_nb_remaining(&is->subpq);
+                Frame* sp[nb];
+                int total_max_subtitle_length =  0;
+                for(int i = 0; i < nb; i++) {
+                    sp[i] = frame_queue_peek_at(&is->subpq, i);
+                    if (vp->pts >= sp[i]->pts + ((float) sp[i]->sub.start_display_time / 1000)) {
+                        if (!sp[i]->uploaded) {
+                            total_max_subtitle_length += max_subtitle_length(&sp[i]->sub);
                         }
-                        sp->uploaded = 1;
                     }
+                }
+
+                char buffered_text[total_max_subtitle_length + 1];
+                buffered_text[0] = '\0';
+                char* current = buffered_text;
+
+                for(int i = 0; i < nb ; i ++) {
+                   if (vp->pts >= sp[i]->pts + ((float) sp[i]->sub.start_display_time / 1000)) {
+                        if (!sp[i]->uploaded) {
+                            if (sp[i]->sub.num_rects > 0) {
+                                for(int j = 0; j < sp[i]->sub.num_rects; j++) {
+                                    if (sp[i]->sub.rects[j]->text) {
+                                        strcat(current, sp[i]->sub.rects[j]->text);
+                                    } else if (sp[i]->sub.rects[j]->ass) {
+                                        parse_ass_subtitle(sp[i]->sub.rects[j]->ass, current);
+                                    }
+                                    int len = strlen(current);
+                                    if(len > 0) {
+                                        current += strlen(current);
+                                        strncat(current, "\n", 1);
+                                        current++;
+                                    }
+                                }
+                            }
+                            sp[i]->uploaded = 1;
+                        }
+                    }
+                }
+
+                int length = strlen(buffered_text);
+
+                if(length > 0) {
+                    buffered_text[length - 1] = '\0';
+                    ffp_notify_msg4(ffp, FFP_MSG_TIMED_TEXT, 0, 0, buffered_text, length +1 );
                 }
             }
         }
@@ -1389,10 +1587,14 @@ retry:
                 while (frame_queue_nb_remaining(&is->subpq) > 0) {
                     sp = frame_queue_peek(&is->subpq);
 
-                    if (frame_queue_nb_remaining(&is->subpq) > 1)
-                        sp2 = frame_queue_peek_next(&is->subpq);
-                    else
-                        sp2 = NULL;
+                    sp2 = NULL;
+                    for(int i = 1; i < frame_queue_nb_remaining(&is->subpq); i++) {
+                        Frame* tsp = frame_queue_peek_at(&is->subpq, i);
+                        if(tsp->pts != sp->pts) {
+                            sp2 = tsp;
+                            break;
+                        }
+                    }
 
                     if (sp->serial != is->subtitleq.serial
                             || (is->vidclk.pts > (sp->pts + ((float) sp->sub.end_display_time / 1000)))
