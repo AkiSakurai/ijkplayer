@@ -1600,7 +1600,7 @@ retry:
                             || (is->vidclk.pts > (sp->pts + ((float) sp->sub.end_display_time / 1000)))
                             || (sp2 && is->vidclk.pts > (sp2->pts + ((float) sp2->sub.start_display_time / 1000))))
                     {
-                        if (sp->uploaded) {
+                        if (sp->uploaded && (!sp2 || !sp2->uploaded)) {
                             ffp_notify_msg4(ffp, FFP_MSG_TIMED_TEXT, 0, 0, "", 1);
                         }
                         frame_queue_next(&is->subpq);
